@@ -1,9 +1,14 @@
+# Add back the necessary imports
 import os
 from groq import Groq
-from tkinter import Tk, Label, Frame, filedialog
+from tkinter import Tk, Label, Frame, filedialog, Button
 import tkinterdnd2 as tkdnd
 from datetime import datetime
 import subprocess
+import pyaudio
+import wave
+import tempfile
+import threading
 
 client = Groq(api_key="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")
 
@@ -54,19 +59,33 @@ def process_dropped_file(file_path):
     else:
         print("La transcripción falló.")
 
+class AudioRecorder:
+    def __init__(self):
+        self.frames = []
+        self.recording = False
+        self.p = None
+        self.stream = None
+        
+    def guardar_audio(self):
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_temp:
+            wf = wave.open(audio_temp.name, "wb")
+            wf.setnchannels(1)
+            wf.setsampwidth(pyaudio.PyAudio().get_sample_size(pyaudio.paInt16))
+            wf.setframerate(16000)
+            wf.writeframes(b"".join(self.frames))
+            wf.close()
+            return audio_temp.name
+
 def create_drop_window():
     root = tkdnd.Tk()
     root.title("Transcriptor de audio")
-    root.geometry("500x300")
+    root.geometry("500x400")  # Made window taller for the new button
 
-    frame = Frame(root, bg="lightgray", width=400, height=200)
+    frame = Frame(root, bg="lightgray", width=400, height=300)
     frame.pack(expand=True, fill="both", padx=20, pady=20)
 
     title_label = Label(
-        frame,
-        text="Transcriptor de Audio",
-        bg="lightgray",
-        font=("Arial", 16, "bold")
+        frame, text="Transcriptor de Audio", bg="lightgray", font=("Arial", 16, "bold")
     )
     title_label.pack(pady=10)
 
@@ -78,32 +97,97 @@ def create_drop_window():
         drop_zone,
         text="Arrastra y suelta aquí\ntu archivo de audio\n\nFormatos soportados:\n.wav, .mp3, .ogg, .opus, .m4a",
         bg="white",
-        font=("Arial", 10)
+        font=("Arial", 10),
     )
     drop_label.pack(expand=True)
-    
+
     status_label = Label(
         frame,
-        text="Esperando archivo...",
+        text="Esperando acción...",
         bg="lightgray",
         font=("Arial", 9)
     )
-    status_label.pack(pady=10)
+    status_label.pack(pady=5)
+
+    recorder = AudioRecorder()
+
+    def toggle_recording():
+        if not recorder.recording:
+            # Start recording
+            recorder.recording = True
+            recorder.frames = []
+            status_label.config(text="Grabando audio...")
+            record_button.config(text="Detener Grabación", bg="#f44336")
+            
+            def audio_stream():
+                recorder.p = pyaudio.PyAudio()
+                recorder.stream = recorder.p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    input=True,
+                    frames_per_buffer=1024
+                )
+                
+                while recorder.recording:
+                    try:
+                        data = recorder.stream.read(1024, exception_on_overflow=False)
+                        recorder.frames.append(data)
+                    except Exception as e:
+                        print(f"Error durante la grabación: {e}")
+                        break
+                
+                # Cleanup
+                recorder.stream.stop_stream()
+                recorder.stream.close()
+                recorder.p.terminate()
+                
+                if recorder.frames:  # Only process if we have recorded data
+                    archivo_audio_temp = recorder.guardar_audio()  # Using the class method
+                    root.after(0, lambda: status_label.config(text="Transcribiendo audio..."))
+                    process_dropped_file(archivo_audio_temp)
+                    os.unlink(archivo_audio_temp)
+                    root.after(0, lambda: record_button.config(text="Grabar Audio", bg="#4CAF50"))
+                    root.after(0, lambda: status_label.config(text="Grabación procesada"))
+            
+            threading.Thread(target=audio_stream, daemon=True).start()
+        else:
+            # Stop recording
+            recorder.recording = False
+            status_label.config(text="Finalizando grabación...")
+            record_button.config(state="disabled")  # Disable button temporarily
+            
+            def enable_button():
+                record_button.config(state="normal", text="Grabar Audio", bg="#4CAF50")
+            
+            root.after(1000, enable_button)  # Re-enable button after 1 second
+
+    record_button = Button(
+        frame,
+        text="Grabar Audio",
+        bg="#4CAF50",
+        fg="white",
+        font=("Arial", 10, "bold"),
+        padx=20,
+        pady=10,
+        command=toggle_recording
+    )
+    record_button.pack(pady=10)
 
     def handle_drop(event):
         file_path = event.data.strip("{}")
         if file_path.lower().endswith((".wav", ".mp3", ".ogg", ".opus", ".m4a")):
             status_label.config(text="Procesando archivo...")
-            drop_zone.config(bg="#e8f5e9")  
+            drop_zone.config(bg="#e8f5e9")
             process_dropped_file(file_path)
             drop_zone.config(bg="white")
             status_label.config(text="Archivo procesado correctamente")
         else:
             status_label.config(text="Formato de archivo no soportado")
-    
+
     drop_zone.drop_target_register("DND_Files")
     drop_zone.dnd_bind("<<Drop>>", handle_drop)
-    
+
     return root
 
 def main():
