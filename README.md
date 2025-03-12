@@ -1,20 +1,32 @@
-# Audio Transcriptor
+# Transcriptor de Audio Médico
 
-A desktop application that transcribes audio files and voice recordings to text using Groq API.
+Una aplicación de escritorio para transcribir archivos de audio y grabaciones en vivo, especialmente optimizada para terminología médica y radiológica.
 
-## Features
-- Drag and drop interface for audio files
-- Real-time audio recording
-- Multiple audio format support (.wav, .mp3, .ogg, .opus, .m4a)
-- Spanish language transcription
-- Automatic text file generation with timestamps
+## Características
 
-## Requirements
+- Transcripción de archivos de audio (.wav, .mp3, .ogg, .opus, .m4a)
+- Grabación de audio en vivo desde el micrófono
+- Optimizado para terminología médica especializada y radiológica
+- Interfaz de arrastrar y soltar para archivos
+- Contador de uso mensual (límite de 2000 transcripciones)
+- Guardado automático de transcripciones en archivos de texto
+
+## Tecnologías utilizadas
+
 - Python 3.x
-- Required packages in requirements.txt
+- Groq API (modelo whisper-large-v3)
+- Tkinter para la interfaz gráfica
+- PyAudio para grabación de audio
 
-## Installation
-1. Clone the repository
-2. Install dependencies:
+## Requisitos
+
+- Python 3.7 o superior
+- Clave API de Groq
+- Bibliotecas Python: groq, tkinterdnd2, pyaudio
+
+## Instalación
+
+1. Clona este repositorio:
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/SantyCMDev/Transcriptor_Python.git
+cd Transcriptor_Python
