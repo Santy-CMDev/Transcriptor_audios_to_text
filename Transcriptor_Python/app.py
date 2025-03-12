@@ -1,4 +1,3 @@
-# Add back the necessary imports
 import os
 from groq import Groq
 from tkinter import Tk, Label, Frame, filedialog, Button
@@ -79,7 +78,7 @@ class AudioRecorder:
 def create_drop_window():
     root = tkdnd.Tk()
     root.title("Transcriptor de audio")
-    root.geometry("500x400")  # Made window taller for the new button
+    root.geometry("500x400") 
 
     frame = Frame(root, bg="lightgray", width=400, height=300)
     frame.pack(expand=True, fill="both", padx=20, pady=20)
@@ -113,7 +112,6 @@ def create_drop_window():
 
     def toggle_recording():
         if not recorder.recording:
-            # Start recording
             recorder.recording = True
             recorder.frames = []
             status_label.config(text="Grabando audio...")
@@ -137,13 +135,13 @@ def create_drop_window():
                         print(f"Error durante la grabación: {e}")
                         break
                 
-                # Cleanup
+                
                 recorder.stream.stop_stream()
                 recorder.stream.close()
                 recorder.p.terminate()
                 
-                if recorder.frames:  # Only process if we have recorded data
-                    archivo_audio_temp = recorder.guardar_audio()  # Using the class method
+                if recorder.frames:  
+                    archivo_audio_temp = recorder.guardar_audio() 
                     root.after(0, lambda: status_label.config(text="Transcribiendo audio..."))
                     process_dropped_file(archivo_audio_temp)
                     os.unlink(archivo_audio_temp)
@@ -152,15 +150,14 @@ def create_drop_window():
             
             threading.Thread(target=audio_stream, daemon=True).start()
         else:
-            # Stop recording
             recorder.recording = False
             status_label.config(text="Finalizando grabación...")
-            record_button.config(state="disabled")  # Disable button temporarily
+            record_button.config(state="disabled")  
             
             def enable_button():
                 record_button.config(state="normal", text="Grabar Audio", bg="#4CAF50")
             
-            root.after(1000, enable_button)  # Re-enable button after 1 second
+            root.after(1000, enable_button)  
 
     record_button = Button(
         frame,
