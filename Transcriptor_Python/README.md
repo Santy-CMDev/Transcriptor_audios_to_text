@@ -10,6 +10,7 @@ Una aplicación de escritorio para transcribir archivos de audio y grabaciones e
 - Interfaz de arrastrar y soltar para archivos
 - Contador de uso mensual (límite de 2000 transcripciones)
 - Guardado automático de transcripciones en archivos de texto
+- Interfaz gráfica moderna y amigable
 
 ## Tecnologías utilizadas
 
@@ -30,3 +31,4 @@ Una aplicación de escritorio para transcribir archivos de audio y grabaciones e
 ```bash
 git clone https://github.com/SantyCMDev/Transcriptor_Python.git
 cd Transcriptor_Python
+```

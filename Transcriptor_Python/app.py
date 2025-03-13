@@ -1,27 +1,35 @@
 import os
-from groq import Groq
-from tkinter import Tk, Label, Frame, filedialog, Button
-import tkinterdnd2 as tkdnd
-from datetime import datetime
-import subprocess
-import pyaudio
+import json
 import wave
 import tempfile
 import threading
+import subprocess
+from datetime import datetime
+from pathlib import Path
+import pyaudio
+from groq import Groq
+from tkinter import Tk, Label, Frame, filedialog, Button, messagebox
+import tkinterdnd2 as tkdnd
+
+SUPPORTED_FORMATS = (".wav", ".mp3", ".ogg", ".opus", ".m4a")
+MAX_MONTHLY_TRANSCRIPTIONS = 2000
+AUDIO_SETTINGS = {
+    "channels": 1,
+    "rate": 16000,
+    "chunk": 1024,
+    "format": pyaudio.paInt16,
+}
 
 client = Groq(api_key="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")
-
-import json
-from pathlib import Path
 
 USAGE_FILE = Path(__file__).parent / "usage_counter.json"
 
 
 def get_usage_count():
-    if not USAGE_FILE.exists():
-        return {"month": datetime.now().strftime("%Y-%m"), "count": 0}
-
     try:
+        if not USAGE_FILE.exists():
+            return {"month": datetime.now().strftime("%Y-%m"), "count": 0}
+
         with open(USAGE_FILE, "r") as f:
             data = json.load(f)
 
@@ -30,7 +38,8 @@ def get_usage_count():
             data = {"month": current_month, "count": 0}
 
         return data
-    except:
+    except Exception as e:
+        print(f"Error reading usage file: {e}")
         return {"month": datetime.now().strftime("%Y-%m"), "count": 0}
 
 
@@ -50,43 +59,41 @@ counter_label = None
 def transcribir_audio(ruta_archivo_audio):
     try:
         usage = get_usage_count()
-        if usage["count"] >= 1900:
-            print(
-                f"¡ADVERTENCIA! Has usado {usage['count']} transcripciones este mes. Te acercas al límite de 2000."
+        if usage["count"] >= MAX_MONTHLY_TRANSCRIPTIONS - 100:
+            messagebox.showwarning(
+                "Límite de uso",
+                f"¡ADVERTENCIA! Has usado {usage['count']} transcripciones este mes.\n"
+                f"Te quedan {MAX_MONTHLY_TRANSCRIPTIONS - usage['count']} transcripciones.",
             )
+
+        if not os.path.exists(ruta_archivo_audio):
+            raise FileNotFoundError("El archivo de audio no existe")
 
         with open(ruta_archivo_audio, "rb") as archivo:
             transcipcion = client.audio.transcriptions.create(
                 file=(os.path.basename(ruta_archivo_audio), archivo.read()),
                 model="whisper-large-v3",
-                prompt="""El audio contiene dictados médicos con terminología especializada de radiología e imagenología. 
-                
-Presta especial atención a los siguientes términos técnicos y asegúrate de transcribirlos con precisión:
-
-1. Anatomía: tórax, abdomen, extremidades, columna vertebral, cráneo, pelvis, articulaciones
-2. Proyecciones radiográficas: anteroposterior (AP), posteroanterior (PA), lateral, oblicua, axial, sagital, coronal
-3. Densidades radiológicas: radiopaco, radiolúcido, densidad ósea, densidad de tejidos blandos, densidad de aire
-4. Hallazgos patológicos: fractura, luxación, subluxación, escoliosis, cifosis, lordosis, espondilolistesis
-5. Patología pulmonar: infiltrado, consolidación, atelectasia, neumotórax, derrame pleural, nódulo, masa
-6. Patología abdominal: hepatomegalia, esplenomegalia, colelitiasis, nefrolitiasis, íleo
-7. Equipos y técnicas: kilovoltaje (kV), miliamperaje (mA), tiempo de exposición, colimación, filtración
-8. Medios de contraste: radiopaco, baritado, yodado, realce, opacificación
-
-Transcribe con la máxima precisión posible, respetando la terminología médica exacta, abreviaturas estándar y valores numéricos.""",
+                prompt="Transcripción de dictados médicos radiológicos. Enfoque en: "
+                "anatomía (tórax, abdomen, columna, articulaciones), "
+                "términos radiológicos (radiopaco, radiolúcido, densidades), "
+                "proyecciones (AP, PA, lateral, oblicua), "
+                "hallazgos (fracturas, escoliosis, infiltrados, nódulos), "
+                "patologías (derrame pleural, hepatomegalia, calcificaciones), "
+                "técnica (kV, mA, colimación). "
+                "Mantener precisión médica.",
                 response_format="text",
                 language="es",
             )
 
         count = update_usage_count()
-        print(f"Transcripción #{count} del mes actual.")
-
-        global counter_label
         if counter_label:
-            counter_label.config(text=f"Transcripciones: {count}/2000")
+            counter_label.config(
+                text=f"Transcripciones: {count}/{MAX_MONTHLY_TRANSCRIPTIONS}"
+            )
 
         return transcipcion
     except Exception as e:
-        print(f"Ocurrió un error: {str(e)}")
+        messagebox.showerror("Error", f"Error en la transcripción: {str(e)}")
         return None
 
 
@@ -118,10 +125,13 @@ def process_dropped_file(file_path):
         saved_file = guardar_transcripcion(transcription)
         if saved_file:
             print(f"Transcripción guardada en: {saved_file}")
+            return True, "Transcripción guardada correctamente"
         else:
             print("Guardado cancelado por el usuario")
+            return False, "Guardado cancelado por el usuario"
     else:
         print("La transcripción falló.")
+        return False, "La transcripción falló"
 
 
 class AudioRecorder:
@@ -145,42 +155,88 @@ class AudioRecorder:
 def create_drop_window():
     root = tkdnd.Tk()
     root.title("Transcriptor de audio")
-    root.geometry("500x400")
+    root.geometry("600x500")
+    root.configure(bg="#f0f0f0")
 
-    frame = Frame(root, bg="lightgray", width=400, height=300)
-    frame.pack(expand=True, fill="both", padx=20, pady=20)
+    main_frame = Frame(
+        root, bg="#ffffff", highlightbackground="#3498db", highlightthickness=2
+    )
+    main_frame.place(relx=0.5, rely=0.5, relwidth=0.9, relheight=0.9, anchor="center")
+
+    header_frame = Frame(main_frame, bg="#3498db", height=60)
+    header_frame.pack(fill="x", pady=0)
 
     title_label = Label(
-        frame, text="Transcriptor de Audio", bg="lightgray", font=("Arial", 16, "bold")
+        header_frame,
+        text="Transcriptor de Audio",
+        bg="#3498db",
+        fg="white",
+        font=("Segoe UI", 18, "bold"),
     )
     title_label.pack(pady=10)
+
+    content_frame = Frame(main_frame, bg="#ffffff")
+    content_frame.pack(expand=True, fill="both", padx=20, pady=10)
 
     usage = get_usage_count()
     global counter_label
     counter_label = Label(
-        frame,
-        text=f"Transcripciones: {usage['count']}/2000",
-        bg="lightgray",
-        font=("Arial", 9, "italic"),
+        content_frame,
+        text=f"Transcripciones: {usage['count']}/{MAX_MONTHLY_TRANSCRIPTIONS}",
+        bg="#ffffff",
+        fg="#555555",
+        font=("Segoe UI", 9),
     )
-    counter_label.pack(pady=2)
+    counter_label.pack(pady=5, anchor="e")
 
-    drop_zone = Frame(frame, bg="white", width=350, height=150, relief="groove", bd=2)
-    drop_zone.pack(pady=10, padx=10)
+    drop_zone = Frame(
+        content_frame,
+        bg="#f8f9fa",
+        width=350,
+        height=180,
+        relief="flat",
+        bd=1,
+        highlightbackground="#dddddd",
+        highlightthickness=1,
+    )
+    drop_zone.pack(pady=15, padx=10, fill="x")
     drop_zone.pack_propagate(False)
+
+    drop_icon_label = Label(drop_zone, text="📁", bg="#f8f9fa", font=("Segoe UI", 24))
+    drop_icon_label.pack(pady=(20, 5))
 
     drop_label = Label(
         drop_zone,
-        text="Arrastra y suelta aquí\ntu archivo de audio\n\nFormatos soportados:\n.wav, .mp3, .ogg, .opus, .m4a",
-        bg="white",
-        font=("Arial", 10),
+        text="Arrastra y suelta aquí tu archivo de audio",
+        bg="#f8f9fa",
+        fg="#333333",
+        font=("Segoe UI", 11),
     )
-    drop_label.pack(expand=True)
+    drop_label.pack()
+
+    formats_label = Label(
+        drop_zone,
+        text="Formatos soportados: .wav, .mp3, .ogg, .opus, .m4a",
+        bg="#f8f9fa",
+        fg="#666666",
+        font=("Segoe UI", 9),
+    )
+    formats_label.pack(pady=5)
+
+    status_frame = Frame(content_frame, bg="#ffffff", height=30)
+    status_frame.pack(fill="x", pady=5)
 
     status_label = Label(
-        frame, text="Esperando acción...", bg="lightgray", font=("Arial", 9)
+        status_frame,
+        text="Esperando acción...",
+        bg="#ffffff",
+        fg="#555555",
+        font=("Segoe UI", 9),
     )
-    status_label.pack(pady=5)
+    status_label.pack(side="left", padx=5)
+
+    button_frame = Frame(content_frame, bg="#ffffff")
+    button_frame.pack(pady=15, fill="x")
 
     recorder = AudioRecorder()
 
@@ -218,15 +274,30 @@ def create_drop_window():
                     root.after(
                         0, lambda: status_label.config(text="Transcribiendo audio...")
                     )
-                    process_dropped_file(archivo_audio_temp)
+                    success, message = process_dropped_file(archivo_audio_temp)
                     os.unlink(archivo_audio_temp)
+
                     root.after(
                         0,
-                        lambda: record_button.config(text="Grabar Audio", bg="#4CAF50"),
+                        lambda: record_button.config(text="Grabar Audio", bg="#2ecc71"),
                     )
-                    root.after(
-                        0, lambda: status_label.config(text="Grabación procesada")
-                    )
+
+                    if success:
+                        root.after(
+                            0, lambda: status_label.config(text=message, fg="#2e7d32")
+                        )
+                    else:
+                        root.after(
+                            0, lambda: status_label.config(text=message, fg="#c62828")
+                        )
+                        if "cancelado" in message.lower():
+                            root.after(
+                                0,
+                                lambda: messagebox.showinfo(
+                                    "Información",
+                                    "Transcripción cancelada por el usuario",
+                                ),
+                            )
 
             threading.Thread(target=audio_stream, daemon=True).start()
         else:
@@ -235,35 +306,88 @@ def create_drop_window():
             record_button.config(state="disabled")
 
             def enable_button():
-                record_button.config(state="normal", text="Grabar Audio", bg="#4CAF50")
+                record_button.config(state="normal", text="Grabar Audio", bg="#2ecc71")
 
             root.after(1000, enable_button)
 
     record_button = Button(
-        frame,
+        button_frame,
         text="Grabar Audio",
-        bg="#4CAF50",
+        bg="#2ecc71",
         fg="white",
-        font=("Arial", 10, "bold"),
+        font=("Segoe UI", 10, "bold"),
         padx=20,
         pady=10,
+        relief="flat",
         command=toggle_recording,
+        cursor="hand2",
     )
     record_button.pack(pady=10)
 
+    footer_frame = Frame(main_frame, bg="#f5f5f5", height=30)
+    footer_frame.pack(fill="x", side="bottom")
+
+    footer_label = Label(
+        footer_frame,
+        text="© Santy_CMDev",
+        bg="#f5f5f5",
+        fg="#999999",
+        font=("Segoe UI", 8),
+    )
+    footer_label.pack(pady=5)
+
     def handle_drop(event):
         file_path = event.data.strip("{}")
-        if file_path.lower().endswith((".wav", ".mp3", ".ogg", ".opus", ".m4a")):
+        if file_path.lower().endswith(SUPPORTED_FORMATS):
             status_label.config(text="Procesando archivo...")
             drop_zone.config(bg="#e8f5e9")
-            process_dropped_file(file_path)
-            drop_zone.config(bg="white")
-            status_label.config(text="Archivo procesado correctamente")
+
+            progress_label = Label(
+                drop_zone,
+                text="Procesando...",
+                bg="#e8f5e9",
+                fg="#2e7d32",
+                font=("Segoe UI", 10, "italic"),
+            )
+            progress_label.pack(pady=5)
+
+            def process_file():
+                success, message = process_dropped_file(file_path)
+
+                root.after(0, lambda: drop_zone.config(bg="#f8f9fa"))
+                root.after(0, lambda: progress_label.destroy())
+
+                if success:
+                    root.after(
+                        0, lambda: status_label.config(text=message, fg="#2e7d32")
+                    )
+                else:
+                    root.after(
+                        0, lambda: status_label.config(text=message, fg="#c62828")
+                    )
+
+                    if "cancelado" in message.lower():
+                        root.after(
+                            0,
+                            lambda: messagebox.showinfo(
+                                "Información", "Transcripción cancelada por el usuario"
+                            ),
+                        )
+
+            threading.Thread(target=process_file, daemon=True).start()
         else:
             status_label.config(text="Formato de archivo no soportado")
+            messagebox.showerror("Error", "Formato de archivo no soportado")
 
     drop_zone.drop_target_register("DND_Files")
     drop_zone.dnd_bind("<<Drop>>", handle_drop)
+
+    root.update_idletasks()
+    width = root.winfo_width()
+    height = root.winfo_height()
+    x = (root.winfo_screenwidth() // 2) - (width // 2)
+    y = (root.winfo_screenheight() // 2) - (height // 2)
+    root.geometry("{}x{}+{}+{}".format(width, height, x, y))
 
     return root
 
